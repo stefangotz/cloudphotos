@@ -1,0 +1,22 @@
+[tool.poetry]
+name = "cloudphotos"
+version = "0.1.0"
+description = ""
+authors = ["Stefan Götz <github.nooneelse@spamgourmet.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+ExifRead = "^2.3.2"
+pydantic = "^1.9.0"
+
+[tool.poetry.dev-dependencies]
+pytest = "^5.2"
+black = "^22.1.0"
+mypy = "^0.931"
+pylint = "^2.12.2"
+pycodestyle = "^2.8.0"
+pre-commit = "^2.17.0"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"

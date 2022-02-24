@@ -1,0 +1,6 @@
+.git
+package-lock.json
+.vscode
+.coverage
+__pycache__
+*.env
