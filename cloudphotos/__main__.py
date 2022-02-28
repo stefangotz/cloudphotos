@@ -23,9 +23,11 @@ from pathlib import Path
 from typing import List, Dict, Tuple
 import json
 import logging
+import os
 import shutil
 import subprocess
 import sys
+import tempfile
 
 import exifread  # type: ignore
 from pydantic import BaseModel
@@ -54,7 +56,16 @@ class CloudFile:
     @property
     def md5(self) -> str:
         if not self._md5:
-            self._md5 = md5(self._path.open("rb").read()).hexdigest()
+            try:
+                with self._path.open("rb") as file_obj:
+                    self._md5 = md5(file_obj.read()).hexdigest()
+            except OSError:
+                with tempfile.NamedTemporaryFile(delete=False) as tmp:
+                    pass
+                shutil.copy(self.path, tmp.name)
+                with open(tmp.name, "rb") as file_obj:
+                    self._md5 = md5(file_obj.read()).hexdigest()
+                os.remove(tmp.name)
         return self._md5
 
     def __repr__(self):
