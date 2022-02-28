@@ -69,7 +69,7 @@ class CloudFile:
         return self._md5
 
     def __repr__(self):
-        return f"CloudFile(path={self.path}, mtime={self.mtime}, md5={self.md5})"
+        return f"CloudFile(path={self.path}, mtime={self._mtime}, md5={self._md5})"
 
     def copy_to_local(self, target_dir: Path, dir_suffix: str = ""):
         target_path = self._get_local_path(target_dir, dir_suffix)
@@ -122,9 +122,12 @@ class FilesModel(BaseModel):
 
 class Files:
     def __init__(self, files_model: FilesModel):
-        self._files: Dict[Tuple[str, str], FileModel] = {
-            (mdl.path.name, mdl.md5): mdl for mdl in files_model.files
-        }
+        self._by_name_md5: Dict[Tuple[str, str], FileModel] = {}
+        self._by_name: Dict[str, List[FileModel]] = {}
+        for mdl in files_model.files:
+            name = mdl.path.name
+            self._by_name_md5[(name, mdl.md5)] = mdl
+            self._by_name.setdefault(name, []).append(mdl)
 
     @staticmethod
     def load() -> "Files":
@@ -140,15 +143,21 @@ class Files:
             json.dump(self._get_model(), file_desc, default=pydantic_encoder)
 
     def _get_model(self):
-        return FilesModel(files=list(self._files.values()))
+        return FilesModel(files=list(self._by_name_md5.values()))
 
     def add(self, cloud_file: CloudFile):
-        self._files[(cloud_file.path.name, cloud_file.md5)] = FileModel(
+        name = cloud_file.path.name
+        mdl = FileModel(
             path=cloud_file.path, mtime=cloud_file.mtime, md5=cloud_file.md5
         )
+        self._by_name_md5[(name, cloud_file.md5)] = mdl
+        self._by_name.setdefault(name, []).append(mdl)
 
-    def contains(self, cloud_file: CloudFile) -> bool:
-        return (cloud_file.path.name, cloud_file.md5) in self._files
+    def does_not_contain_fast(self, cloud_file: CloudFile) -> bool:
+        return cloud_file.path.name not in self._by_name
+
+    def does_not_contain_slow(self, cloud_file: CloudFile) -> bool:
+        return (cloud_file.path.name, cloud_file.md5) not in self._by_name_md5
 
 
 def _main():
@@ -167,9 +176,34 @@ def _main():
         dir_suffix = sys.argv[3]
 
     files = Files.load()
+    nr_of_first_pass_files = 0
+    second_pass_cloud_files: List[CloudFile] = []
     for cloud_file in _yield_cloud_files(source_dir):
         try:
-            if not files.contains(cloud_file):
+            if files.does_not_contain_fast(cloud_file):
+                logging.info("The cloud_file %s hasn't been copied yet", cloud_file)
+                cloud_file.copy_to_local(target_dir, dir_suffix)
+                files.add(cloud_file)
+                files.store()
+                logging.info("Copied cloud_file %s", cloud_file)
+                nr_of_first_pass_files += 1
+            else:
+                logging.info(
+                    "The cloud_file %s may have already been copied", cloud_file
+                )
+                second_pass_cloud_files.append(cloud_file)
+        except Exception as exc:  # pylint: disable=broad-except
+            logging.exception(exc)
+
+    logging.info(
+        "Copied %i files in the first pass, %i files remaining for second pass",
+        nr_of_first_pass_files,
+        len(second_pass_cloud_files),
+    )
+
+    for cloud_file in second_pass_cloud_files:
+        try:
+            if files.does_not_contain_slow(cloud_file):
                 logging.info("The cloud_file %s hasn't been copied yet", cloud_file)
                 cloud_file.copy_to_local(target_dir, dir_suffix)
                 files.add(cloud_file)
